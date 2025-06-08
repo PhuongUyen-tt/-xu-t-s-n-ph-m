@@ -1,6 +1,4 @@
 # prompt: save the code as `app.py`
-
-%%writefile app.py
 from google.colab import drive
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -17,7 +15,7 @@ import joblib
 import os # Import os for checking file existence
 
 # Mount Google Drive (necessary for Colab execution, remove for local Streamlit)
-# drive.mount('/content/drive')
+drive.mount('/content/drive')
 
 # --- File Paths ---
 # Update these paths to reflect the correct location of your data and saved files
