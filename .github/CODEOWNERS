@@ -1,1 +1,206 @@
-* @streamlit/community-cloud
+# prompt: save the code as `app.py`
+
+%%writefile app.py
+from google.colab import drive
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix
+import numpy as np
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
+import xgboost as xgb
+from scipy.stats import uniform, randint
+from sklearn.preprocessing import LabelEncoder # Import LabelEncoder
+import streamlit as st
+import joblib
+import os # Import os for checking file existence
+
+# Mount Google Drive (necessary for Colab execution, remove for local Streamlit)
+# drive.mount('/content/drive')
+
+# --- File Paths ---
+# Update these paths to reflect the correct location of your data and saved files
+file_path_data = '/content/drive/MyDrive/HK II | 24.25/AI in Biz /BTL /data.csv' # Path to your training data
+# file_path_data = '/content/drive/MyDrive/Phú Quốc/du_lieu_da_them_season_va_income( dữ liệu cuối cùng).xlsx - Sheet1.csv' # Path to your data for unique values
+model_path = 'xgboost_model.pkl'
+features_path = 'xgboost_features.pkl'
+label_encoder_target_path = 'product_category_label_encoder.pkl'
+
+# --- Load Data and Setup ---
+# Load the original dataframe to get unique values for dropdowns
+# This is needed to populate selectboxes with actual data values
+try:
+    original_df = pd.read_csv(file_path_data)
+    # Extract unique values for dropdowns. Adjust column names as per your data.
+    # Ensure these column names match the features used in the model.
+    unique_store_locations = sorted(original_df['store_location'].dropna().unique().tolist())
+    unique_seasons = sorted(original_df['Season'].dropna().unique().tolist())
+    unique_genders = sorted(original_df['Gender'].dropna().unique().tolist())
+    # Add other unique columns relevant to your features here
+    # Example: unique_occupations = sorted(original_df['Occupation'].dropna().unique().tolist())
+    # Example: unique_product_categories = sorted(original_df['product_category'].dropna().unique().tolist()) # For target decoding later if needed
+
+except FileNotFoundError:
+    st.error(f"Original data file not found at {file_path_data}. Please ensure the file exists.")
+    st.stop()
+except KeyError as e:
+    st.error(f"Missing expected column in original data file: {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"Error loading original data: {e}")
+    st.stop()
+
+# --- Load Trained Model and Artifacts ---
+# Load the trained XGBoost model
+if not os.path.exists(model_path):
+    st.error(f"Model file '{model_path}' not found. Please train and save the model first.")
+    st.stop()
+try:
+    model = joblib.load(model_path)
+except Exception as e:
+    st.error(f"Error loading the model file: {e}")
+    st.stop()
+
+# Load the feature columns used during training
+if not os.path.exists(features_path):
+    st.error(f"Feature columns file '{features_path}' not found. Please run the training steps first to save X_train columns.")
+    st.stop()
+try:
+    expected_cols = joblib.load(features_path)
+except Exception as e:
+    st.error(f"Error loading the feature columns file: {e}")
+    st.stop()
+
+# Load the LabelEncoder for the target variable if you need to decode predictions
+# if not os.path.exists(label_encoder_target_path):
+#     st.warning(f"Target LabelEncoder file '{label_encoder_target_path}' not found. Predictions will be numerical.")
+#     label_encoder_y = None
+# else:
+#     try:
+#         label_encoder_y = joblib.load(label_encoder_target_path)
+#     except Exception as e:
+#         st.error(f"Error loading the Target LabelEncoder file: {e}")
+#         label_encoder_y = None
+
+
+# --- Streamlit App Layout ---
+st.title("Seasonal Product Demand Forecasting")
+st.header("Input the details to predict product demand for a season.")
+
+# --- Input Widgets ---
+# Define input widgets based on the features used for training (expected_cols)
+# You need to map the feature columns in expected_cols back to meaningful user inputs.
+# For one-hot encoded features like Season_Spring, you'll need a single 'Season' selectbox.
+
+# Example based on the features you mentioned: ["store_location", "Gender", "Age", "Total_Bill", "Season", "Size", "transaction_qty"]
+# And the ones used for XGBoost: derived from "store_location", "Gender", "Age", "Total_Bill", "Season", "Size", "transaction_qty" after one-hot encoding
+
+st.subheader("Enter Product and Customer Details:")
+
+# Use dropdowns for categorical features
+store_location = st.selectbox("Store Location", unique_store_locations)
+gender = st.selectbox("Gender", unique_genders)
+season = st.selectbox("Season", unique_seasons)
+# Assuming 'Size' is also a categorical feature based on your previous code snippet
+# You would need unique values for 'Size' from your original data
+# unique_sizes = sorted(original_df['Size'].dropna().unique().tolist())
+# size = st.selectbox("Size", unique_sizes)
+
+
+# Use number inputs for numerical features
+age = st.number_input("Age", min_value=0, max_value=120, value=30, step=1) # Default to a reasonable value
+total_bill = st.number_input("Total Bill", min_value=0.0, value=100.0, step=0.1) # Default to a reasonable value
+transaction_qty = st.number_input("Transaction Quantity", min_value=1, value=1, step=1)
+
+
+# Button to trigger prediction
+predict_button = st.button("Predict Demand")
+
+# --- Prediction Logic ---
+if predict_button:
+    # Create a DataFrame from user inputs
+    input_data = {
+        'Age': age,
+        'Total_Bill': total_bill,
+        'transaction_qty': transaction_qty,
+        'Gender': gender,
+        'Season': season,
+        # 'Size': size, # Include if 'Size' is a feature
+        'store_location': store_location,
+        # Add other numerical features here if used in your model training
+        # e.g., 'Income', 'unit_price', 'month', 'year'
+    }
+    input_df = pd.DataFrame([input_data])
+
+    # Apply one-hot encoding to the categorical columns in the input DataFrame
+    # This must match the encoding applied to the training data (X_train)
+    categorical_cols_to_encode_input = ['Gender', 'Season', 'store_location'] # Add 'Size' if used
+    # Ensure the column names match your input_df keys
+
+    # Apply one-hot encoding. This requires knowing the unique categories seen during training.
+    # A safer way is to use the original_df to get all possible categories.
+    # This ensures that even if a category is not in the current input, the column exists with value 0.
+
+    input_df = pd.get_dummies(input_df, columns=['Gender'], prefix='Gender', drop_first=False) # Keep all dummies for reindexing later
+    input_df = pd.get_dummies(input_df, columns=['Season'], prefix='Season', drop_first=False) # Keep all dummies
+    input_df = pd.get_dummies(input_df, columns=['store_location'], prefix='store_location', drop_first=False) # Keep all dummies
+    # input_df = pd.get_dummies(input_df, columns=['Size'], prefix='Size', drop_first=False) # Include if Size is used
+
+    # Reindex the input_df to match the expected columns from training (expected_cols)
+    # Fill missing columns (due to one-hot encoding not generating all possible columns in the input) with 0
+    input_df_processed = input_df.reindex(columns=expected_cols, fill_value=0)
+
+    # Ensure the order of columns matches the training data
+    input_df_processed = input_df_processed[expected_cols]
+
+
+    # Make prediction
+    try:
+        # Predict the numerical product category label
+        predicted_label = model.predict(input_df_processed)[0]
+
+        # Decode the predicted label back to the original product category string
+        # This requires the LabelEncoder used during training
+        # If label_encoder_y is None, we can only display the numerical label
+        # if label_encoder_y:
+        #     predicted_category = label_encoder_y.inverse_transform([int(predicted_label)])[0]
+        #     st.success(f"Predicted Product Category: **{predicted_category}**")
+        # else:
+        st.success(f"Predicted Product Category (Numerical Label): **{int(predicted_label)}**") # Display as integer
+
+
+    except Exception as e:
+        st.error(f"An error occurred during prediction: {e}")
+        st.write("Please check the input values and ensure the model and feature files are correctly loaded.")
+
+st.write("To run this app:")
+st.code("1. Save the code above as `app.py`")
+st.code("2. Ensure 'xgboost_model.pkl' and 'xgboost_features.pkl' are in the same directory or accessible path.")
+st.code("3. Open your terminal or command prompt.")
+st.code("4. Navigate to the directory where you saved `app.py`.")
+st.code("5. Run the command: `streamlit run app.py`")
+st.write("If running on Google Colab, you'll need to use ngrok or another tunneling service to expose the Streamlit app.")
+
+# Note: The training steps (Gradient Boosting and XGBoost with RandomizedSearchCV)
+# are still included in this file. When running `streamlit run app.py` locally,
+# these training steps will execute every time the app starts, which is inefficient.
+# It's recommended to perform training and model saving in a separate script or notebook,
+# and only load the saved model and artifacts in the Streamlit app.
+
+# Example of saving the trained XGBoost model and feature columns after training (in your training script/notebook):
+# Assuming `random_search` has been fitted and `expected_cols` are the columns of X_train
+
+# # Save the best XGBoost model
+# best_xgb_model = random_search.best_estimator_
+# joblib.dump(best_xgb_model, model_path)
+# print(f"\nBest XGBoost model saved to {model_path}")
+
+# # Save the list of feature columns
+# joblib.dump(X_train.columns.tolist(), features_path)
+# print(f"Feature columns list saved to {features_path}")
+
+# # Save the target LabelEncoder
+# joblib.dump(label_encoder_y, label_encoder_target_path)
+# print(f"Target LabelEncoder saved to {label_encoder_target_path}")
+
